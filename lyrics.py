@@ -7,7 +7,10 @@ import time
 logging.basicConfig(level=logging.INFO)
 
 from suds.client import Client
+from xml.etree import ElementTree
+    
 c = Client('http://lyrics.wikia.com/server.php?wsdl')
+data_dir = "data"
 
 def get_songs(artist):
     result = c.service.getArtist(artist)
@@ -19,19 +22,25 @@ def get_songs(artist):
 def get_titles(artist, songs, limit=None):
     urls = []
     for song in songs[:limit]:
-        result = c.service.getSong(artist, song)
-        if result.lyrics == "Not found":
-            logging.warn("%s:%s not found" % (artist, song))
-            continue
-        urls.append(result.url)
-        time.sleep(0.1) # rate limit ourselves
+        try:
+            result = c.service.getSong(artist, song)
+            if result.lyrics == "Not found":
+                logging.warn("%s:%s not found" % (artist, song))
+                continue
+            urls.append(result.url)
+            time.sleep(0.1) # rate limit ourselves
+        except Exception as e:
+            logging.error(str(e))
 
     titles = []
     prefix = "http://lyrics.wikia.com/"
     for url in urls:
-        assert url.startswith(prefix)
-        title = url[len(prefix):]
-        titles.append(title)
+        try:
+            assert url.startswith(prefix)
+            title = url[len(prefix):]
+            titles.append(title)
+        except Exception as e:
+            logging.error(str(e))
             
     return titles
 
@@ -41,8 +50,6 @@ def get_content(url):
     return response.read()
 
 
-from xml.etree import ElementTree
-    
 def get_lyrics(titles):
     lyrics = []
     prefix = "http://lyrics.wikia.com/api.php?action=query&prop=revisions&rvprop=content&format=xml&titles="
@@ -63,12 +70,25 @@ def get_lyrics(titles):
         except Exception as e:
             logging.error(str(e))
     return lyrics
+
+def cached(artist, cache_name, fn, force_update=False):
+    cache_file = os.path.join(data_dir, "%s-%s.json" % (artist, cache_name))
+    if not force_update and os.path.exists(cache_file):
+        with open(cache_file, "r") as f:
+            result = json.load(f)
+    else:
+        result = fn() # call the actual function
+        with open(cache_file, "w") as f:
+            json.dump(result, f)
+    return result
     
 def main(artists):
     for artist in artists:
-        songs = get_songs(artist)
-        titles = get_titles(artist, songs, limit=None)
-        lyrics = get_lyrics(titles)
+        cache = lambda cache_name, fn:\
+                cached(artist, cache_name, fn, force_update=False)
+        songs = cache("songs", lambda: get_songs(artist))
+        titles = cache("titles", lambda: get_titles(artist, songs, limit=None))
+        lyrics = cache("lyrics", lambda: get_lyrics(titles))
         for lyric in lyrics:
             print unicode(lyric).encode('utf-8')
     
