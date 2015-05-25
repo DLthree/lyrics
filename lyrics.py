@@ -1,67 +1,60 @@
-import logging
-import socket
 import sys
-import time
+import logging
 
-from suds.client import Client
+logging.basicConfig()
 
-logging.basicConfig(level=logging.INFO)
-# logging.getLogger('suds.client').setLevel(logging.DEBUG)
+from PyQt4 import QtGui, QtCore, QtScript
+from PyQt4.QtScript import QScriptEngine, QScriptValue
 
-class ChartLyrics(Client):
-    '''
-    AddLyric(xs:int trackId, xs:string trackCheckSum, xs:string lyric, xs:string email, )
-    GetLyric(xs:int lyricId, xs:string lyricCheckSum, )
-    SearchLyric(xs:string artist, xs:string song, )
-    SearchLyricDirect(xs:string artist, xs:string song, )
-    SearchLyricText(xs:string lyricText, )
-    '''
-    
-    def __init__(self,
-                 url='http://api.chartlyrics.com/apiv1.asmx?WSDL',
-                 timeout=20,
-                 retries=5):
-        self.timeout = timeout
-        self.retries = retries
-        super(ChartLyrics, self).__init__(url)
-        time.sleep(self.timeout)
+class ScriptEngineRunError(Exception):
+    pass
 
-    def retry(self, fn):
-        i = 0
-        while True:
-            try:
-                i += 1
-                result = fn()
-                time.sleep(self.timeout)
-                return result
-            except socket.error:
-                logging.warn("Failed: %d of %d" % (i, self.retries))
-                if i >= self.retries:
-                    raise
-                else:
-                    time.sleep(self.timeout)
-            except:
-                return None
-                    
-    def search(self, artist, song):
-        return self.retry(lambda: self.service.SearchLyricDirect(
-            artist=artist, song=song))
+class ScriptEngine(QScriptEngine):
+    def __init__(self, *args, **kwargs):
+        app = QtCore.QCoreApplication.instance()
+        if app is None:
+            app = QtCore.QCoreApplication(sys.argv[:1])
+        self.app = app
+        super().__init__(*args, **kwargs)
+
+    def import_extension(self, ext):
+        res = self.importExtension(ext)
+        if not res.isUndefined():
+            raise Exception(res.toVariant()['message'])
+
+    def add_function(self, name, fn):
+        f = self.newFunction(fn)
+        self.globalObject().setProperty(name, f)
+
+    def check_error(self, res, filename=""):
+        if res.isError():
+            error = res.toVariant()
+            filename = error['fileName'] or filename
+            raise ScriptEngineRunError("%s:%d - %s" % (
+                filename, error['lineNumber'], error['message']))
+        return res
+
+    def run(self, filename):
+        res = self.evaluate(open(filename, "r").read())
+        self.check_error(res, filename)
+        return res.toVariant()
+
+class LyricsEngine(ScriptEngine):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        for ext in ["qt.core", "qt.xml"]:
+            self.import_extension(ext)
+        self.run("lyrics.js")
+
+    def get_lyrics(self, artist, song):
+        res = self.evaluate('getLyrics("%s", "%s", "");' % (
+            artist, song))
+        self.check_error(res)
+        return res.toVariant()
         
-client = ChartLyrics()
-results = []
-for line in open(sys.argv[1], 'r'):
-    try:
-        line = line.strip()
-        print >>sys.stderr, line 
-        result = client.search('Backstreet Boys', line)
-        if result is None:
-            continue
-        print result.LyricSong
-        print result.LyricArtist
-        print
-        print result.Lyric
-        print "="*80
-    except:
-        pass
+        
+if __name__ == "__main__":
+    se = LyricsEngine()
+    print(se.get_lyrics("taylor swift", "love story"))
+    # import pdb; pdb.set_trace() ## DEBUG ##
     
-

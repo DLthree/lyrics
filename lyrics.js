@@ -25,11 +25,11 @@
 *   51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.         *
 **************************************************************************/
 
-Importer.loadQtBinding( "qt.core" );
-Importer.loadQtBinding( "qt.xml" );
+// Importer.loadQtBinding( "qt.core" );
+// Importer.loadQtBinding( "qt.xml" );
 
 /* GLOBAL VARIABLES */
-// template for the xml object that will be populated and passed to Amarok.Lyrics.showLyrics()
+// template for the xml object that will be populated and passed to showLyrics()
 XML = "<?xml version=\"1.0\" encoding=\"UTF-8\" ?><lyric artist=\"{artist}\" title=\"{title}\">{lyrics}</lyric>";
 // if we change variable xml it will not reinitialized on next lyrics request, so we will get lyrics from previous song
 // because of that we need temp variable
@@ -45,6 +45,10 @@ TITLE  = "";
 ERRORMSG = "Lyrics not found. Sorry.";
 
 
+function debug(s)
+{
+    print(s);
+}
 
 /* receives a Wiki page (in XML format) that contains url to lyric of the requested song
    this API function can correct our tags
@@ -56,7 +60,7 @@ function onHelpReceived( response )
     try
     {
         if( response.length == 0 )
-            Amarok.Lyrics.showLyricsError( ERRORMSG );
+            showLyricsError( ERRORMSG );
         else
         {
             var doc = new QDomDocument();
@@ -76,14 +80,14 @@ function onHelpReceived( response )
             }
             else
             {
-                  Amarok.Lyrics.showLyricsNotFound( ERRORMSG );
+                  showLyricsNotFound( ERRORMSG );
             }
         }
     }
     catch( err )
     {
-        Amarok.Lyrics.showLyricsError( ERRORMSG );
-        Amarok.debug( "script error in function onHelpReceived: " + err );
+        showLyricsError( ERRORMSG );
+        debug( "script error in function onHelpReceived: " + err );
     }
 }
 
@@ -93,7 +97,7 @@ function onLyricsReceived( response, redirects )
     try
     {
         if( response.length == 0 )
-            Amarok.Lyrics.showLyricsError( "Unable to contact server - no website returned" ); // TODO: this should be i18n able
+            showLyricsError( "Unable to contact server - no website returned" ); // TODO: this should be i18n able
         else
         {
             var doc = new QDomDocument();
@@ -112,15 +116,15 @@ function onLyricsReceived( response, redirects )
                 
                 var lindex = response.indexOf("<" + capture[1]) + capture[1].length + 1;
                 var rindex = response.indexOf("</" + capture[1]);
-                NEWXML = NEWXML.replace( "{lyrics}", Amarok.Lyrics.escape( response.substring(lindex, rindex) ) );
-                Amarok.Lyrics.showLyrics( NEWXML );
+                NEWXML = NEWXML.replace( "{lyrics}", escape( response.substring(lindex, rindex) ) );
+                showLyrics( NEWXML );
             }
             else if(capture = /#redirect\s+\[\[(.+)\]\]/i.exec(response))
             { // redirect pragma found: #REDIRECT [[Band:Song]]
                 redirects++;
                 if(redirects == MAXREDIRECTS)
                 { // redirection limit exceed
-                    Amarok.Lyrics.showLyricsNotFound( ERRORMSG );
+                    showLyricsNotFound( ERRORMSG );
                     return;
                 }
                 
@@ -136,14 +140,14 @@ function onLyricsReceived( response, redirects )
             }
             else
             {
-                Amarok.Lyrics.showLyricsNotFound( ERRORMSG );
+                showLyricsNotFound( ERRORMSG );
             }
         }
     }
     catch( err )
     {
-        Amarok.Lyrics.showLyricsError( ERRORMSG );
-        Amarok.debug( "script error in function onLyricsReceived: " + err );
+        showLyricsError( ERRORMSG );
+        debug( "script error in function onLyricsReceived: " + err );
     }
 }
 
@@ -185,7 +189,7 @@ function URLify( string ) {
         var result = words.join( "_" );
         return result;
     } catch ( err ) {
-        Amarok.debug ( "script error in function URLify: " + err );
+        debug ( "script error in function URLify: " + err );
     } 
 }
 
@@ -205,7 +209,7 @@ function entityDecode(string)
     }
     catch( err )
     {
-        Amarok.debug( "script error in function entityDecode: " + err );
+        debug( "script error in function entityDecode: " + err );
     }
 }
 
@@ -215,8 +219,8 @@ function getLyrics( artist, title, url )
     try
     {
         // save artist and title for later display now
-        NEWXML = XML.replace( "{artist}", Amarok.Lyrics.escape( artist ) );
-        NEWXML = NEWXML.replace( "{title}", Amarok.Lyrics.escape( title ) );
+        NEWXML = XML.replace( "{artist}", escape( artist ) );
+        NEWXML = NEWXML.replace( "{title}", escape( title ) );
         
         // strip "featuring <someone else>" from the artist
         var strip = artist.toLowerCase().indexOf( " ft. ");
@@ -238,15 +242,15 @@ function getLyrics( artist, title, url )
 
         // assemble the (encoded!) URL, build a QUrl out of it and dispatch the download request
         var url = QUrl.fromEncoded( new QByteArray( APIURL + artist + ":" + title ), 1);
-        Amarok.debug( "request URL: " + url.toString() );
+        debug( "request URL: " + url.toString() );
                                                                           // there was no redirections yet
         new Downloader( url, new Function("response", "onLyricsReceived(response, -1)") );
     }
     catch( err )
     {
-        Amarok.debug( "error: " + err );
+        debug( "error: " + err );
     }
 }
 
 
-Amarok.Lyrics.fetchLyrics.connect( getLyrics );
+// fetchLyrics.connect( getLyrics );
