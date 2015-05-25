@@ -1,8 +1,9 @@
-import sys
 import logging
 import urllib2
 import re
 import time
+import os
+import json
 
 logging.basicConfig(level=logging.INFO)
 
@@ -109,5 +110,6 @@ if __name__ == "__main__":
         "Spice Girls",
         ]
     main(artists)
+    # import sys
     # main(sys.argv[1:])
     
