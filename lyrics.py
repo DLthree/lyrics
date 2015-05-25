@@ -1,60 +1,93 @@
 import sys
 import logging
+import urllib2
+import re
+import time
 
-logging.basicConfig()
+logging.basicConfig(level=logging.INFO)
 
-from PyQt4 import QtGui, QtCore, QtScript
-from PyQt4.QtScript import QScriptEngine, QScriptValue
+from suds.client import Client
+c = Client('http://lyrics.wikia.com/server.php?wsdl')
 
-class ScriptEngineRunError(Exception):
-    pass
+def get_songs(artist):
+    result = c.service.getArtist(artist)
+    songs = []
+    for album in result.albums:
+        songs.extend(album.songs)
+    return songs
 
-class ScriptEngine(QScriptEngine):
-    def __init__(self, *args, **kwargs):
-        app = QtCore.QCoreApplication.instance()
-        if app is None:
-            app = QtCore.QCoreApplication(sys.argv[:1])
-        self.app = app
-        super().__init__(*args, **kwargs)
+def get_titles(artist, songs, limit=None):
+    urls = []
+    for song in songs[:limit]:
+        result = c.service.getSong(artist, song)
+        if result.lyrics == "Not found":
+            logging.warn("%s:%s not found" % (artist, song))
+            continue
+        urls.append(result.url)
+        time.sleep(0.1) # rate limit ourselves
 
-    def import_extension(self, ext):
-        res = self.importExtension(ext)
-        if not res.isUndefined():
-            raise Exception(res.toVariant()['message'])
+    titles = []
+    prefix = "http://lyrics.wikia.com/"
+    for url in urls:
+        assert url.startswith(prefix)
+        title = url[len(prefix):]
+        titles.append(title)
+            
+    return titles
 
-    def add_function(self, name, fn):
-        f = self.newFunction(fn)
-        self.globalObject().setProperty(name, f)
+def get_content(url):
+    response = urllib2.urlopen(url)
+    time.sleep(0.1) # rate limit
+    return response.read()
 
-    def check_error(self, res, filename=""):
-        if res.isError():
-            error = res.toVariant()
-            filename = error['fileName'] or filename
-            raise ScriptEngineRunError("%s:%d - %s" % (
-                filename, error['lineNumber'], error['message']))
-        return res
 
-    def run(self, filename):
-        res = self.evaluate(open(filename, "r").read())
-        self.check_error(res, filename)
-        return res.toVariant()
+from xml.etree import ElementTree
+    
+def get_lyrics(titles):
+    lyrics = []
+    prefix = "http://lyrics.wikia.com/api.php?action=query&prop=revisions&rvprop=content&format=xml&titles="
+    for title in titles:
+        try:
+            logging.info(title)
+            url = prefix + title
+            content = get_content(url)
 
-class LyricsEngine(ScriptEngine):
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        for ext in ["qt.core", "qt.xml"]:
-            self.import_extension(ext)
-        self.run("lyrics.js")
-
-    def get_lyrics(self, artist, song):
-        res = self.evaluate('getLyrics("%s", "%s", "");' % (
-            artist, song))
-        self.check_error(res)
-        return res.toVariant()
-        
-        
+            et = ElementTree.fromstring(content)
+            txt = et.find("query").find("pages").find("page") \
+                .find("revisions").find("rev").text
+            mo = re.search("<lyrics>(.*)</lyrics>", txt, re.DOTALL)
+            if not mo:
+                logging.warn("get_lyrics(%s) no mo" % title)
+                continue
+            lyrics.append(mo.group(1))
+        except Exception as e:
+            logging.error(str(e))
+    return lyrics
+    
+def main(artists):
+    for artist in artists:
+        songs = get_songs(artist)
+        titles = get_titles(artist, songs, limit=None)
+        lyrics = get_lyrics(titles)
+        for lyric in lyrics:
+            print unicode(lyric).encode('utf-8')
+    
 if __name__ == "__main__":
-    se = LyricsEngine()
-    print(se.get_lyrics("taylor swift", "love story"))
-    # import pdb; pdb.set_trace() ## DEBUG ##
+    artists = [
+        "Taylor Swift",
+        "One Direction",
+        "Ed Sheeran",
+        "Selena Gomez",
+        "Ariana Grande",
+        "Jonas Brothers",
+        "The Wanted",
+        "Katy Perry",
+        "Kelly Clarkson",
+        "Backstreet Boys",
+        "NSYNC",
+        "New Kids on the Block",
+        "Spice Girls",
+        ]
+    main(artists)
+    # main(sys.argv[1:])
     
